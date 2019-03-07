@@ -13,7 +13,7 @@ How to use? Just copy them to your `~/.config/wireshark/plugins` folder.
     - IFeatureSet
 
 ##### Issues
-  - Not working for comunication `host > device`
+  - Not working for `host > device` comunication
 
 ### Steelseries
 ###### Planned, no active development yet
