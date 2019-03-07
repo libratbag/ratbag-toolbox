@@ -156,15 +156,21 @@ local version_minor = {}
 
 -- Dissector
 function hidpp_proto.dissector(buffer, pinfo, tree)
-    pinfo.cols["protocol"] = "CAUGHT" -- debug
-
     local length = buffer:bytes():len()
 
-    -- debug
-    if length > 0 then
-        print("\n======= PACKET", pinfo.number)
-        print(buffer:bytes())
+    -- remove extra info included in USB CONTROL packets
+    if length == REPORT_SHORT_LEN + 7 or
+        length == REPORT_LONG_LEN + 7 or
+        length == REPORT_VERY_LONG_LEN + 7 then
+            buffer = buffer(7)
+            length = buffer:bytes():len()
     end
+
+    -- debug
+--    if length > 0 then
+--        print("\n======= PACKET", pinfo.number)
+--        print(buffer:bytes())
+--    end
 
     if length >= REPORT_SHORT_LEN then -- minimum length
         local report = buffer(0, 1):uint()
@@ -175,8 +181,8 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             pinfo.cols["protocol"] = "HID++"
 
             -- debug
-            print("= Packet is HID++")
-            print(pinfo.src, " > ", pinfo.dst)
+--            print("= Packet is HID++")
+--            print(pinfo.src, " > ", pinfo.dst)
 
             -- Populate data
             local device    = buffer(1, 1):uint()
