@@ -183,7 +183,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
         if (report == REPORT_SHORT and length == REPORT_SHORT_LEN) or
            (report == REPORT_LONG  and length == REPORT_LONG_LEN) or
            (report == REPORT_VERY_LONG  and length == REPORT_VERY_LONG_LEN) then
-            pinfo.cols["protocol"] = "HID++"
+            pinfo.cols.protocol = "HID++"
 
             -- debug
 --            print("= Packet is HID++")
