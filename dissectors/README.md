@@ -12,8 +12,5 @@ How to use? Just copy them to your `~/.config/wireshark/plugins` folder.
     - IRoot
     - IFeatureSet
 
-##### Issues
-  - Nothing? :)
-
 ### Steelseries
 ###### Planned, no active development yet

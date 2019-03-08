@@ -99,6 +99,7 @@ local f_ase     = ProtoField.uint8  ("hidpp.ase",       "Application-specific ev
 local f_sw_id   = ProtoField.uint8  ("hidpp.sw_id",     "Software ID",  base.HEX)
 local f_args    = ProtoField.bytes  ("hidpp.args",      "Arguments")
 local f_arg     = ProtoField.bytes  ("hidpp.args.arg",  "Argument")
+local f_error   = ProtoField.string ("hidpp.error" ,    "Error")
 
 -- possible arguments
 local f_major_version   = ProtoField.uint8  ("hidpp.args.major_version",    "Control Version Major")
@@ -107,9 +108,12 @@ local f_ping_data       = ProtoField.uint8  ("hidpp.args.ping_data",        "Pin
 local f_feature_index   = ProtoField.uint8  ("hidpp.args.feature_index",    "Feature Index")
 local f_feature_type    = ProtoField.uint8  ("hidpp.args.feature_type",     "Feature Type")
 local f_ft_obsolete     = ProtoField.bool   ("hidpp.args.feature_type.obsolete",    "Obsolete")
-local f_ft_sw_hidden    = ProtoField.bool   ("hidpp.args.feature_type.sw_hidden",   "Hidden in Software")
+local f_ft_state        = ProtoField.uint8  ("hidpp.args.feature_type.state",        "State",   base.DEC, {
+    [0] = "Suported",
+    [1] = "Hidden in software",
+})
 local f_count           = ProtoField.uint8  ("hidpp.args.count",            "Count")
-local f_feature_id      = ProtoField.uint16 ("hidpp.args.feature_id",       "Feature ID")
+local f_feature_id      = ProtoField.uint16 ("hidpp.args.feature_id",       "Feature ID",   base.HEX)
 local f_entity_count    = ProtoField.uint8  ("hidpp.args.entity_count",     "Entity Count")
 local f_fw_hw_entity    = ProtoField.uint8  ("hidpp.args.fw_hw_entity",     "FW/HW Entity")
 local f_fw_type         = ProtoField.uint8  ("hidpp.args.fw_type",          "FW Type",  base.DEC, {
@@ -132,6 +136,7 @@ hidpp_proto.fields = {
     f_sw_id,
     f_args,
     f_arg,
+    f_error,
     -- possible arguments
     f_major_version,
     f_minor_version,
@@ -139,7 +144,7 @@ hidpp_proto.fields = {
     f_feature_index,
     f_feature_type,
     f_ft_obsolete,
-    f_ft_sw_hidden,
+    f_ft_state,
     f_count,
     f_feature_id,
     f_entity_count,
@@ -183,6 +188,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             -- debug
 --            print("= Packet is HID++")
 --            print(pinfo.src, " > ", pinfo.dst)
+            local to_host = tostring(pinfo.dst) == "host"
 
             -- Populate data
             local device    = buffer(1, 1):uint()
@@ -210,35 +216,51 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- IRoot
             if feature == HIDPP2_ERR_HIDPP1 then
-                subtree:add(f_fctn, "ERR_INVALID_SUBID (means it's HID++ 1.0)")
-                args_subtree:add(f_major_version, 1)
-                args_subtree:add(f_minor_version, 0)
+                if to_host then -- it's hid++ 1.0
+                    subtree:add(f_fctn, "ERR_INVALID_SUBID (means it's HID++ 1.0)")
+                    args_subtree:add(f_major_version, 1)
+                    args_subtree:add(f_minor_version, 0)
+                else -- error
+                    subtree:add(f_error, "A ERR_INVALID_SUBID packet shouldn't be sent from the host to the device")
+                end
             elseif feature == FT_I_ROOT then
-                if ase == 0 then
+                if ase == 0 then -- ASE 0: featureIndex, featureType = GetFeature(featureID)
                     subtree:add(f_fctn, "featureIndex, featureType = GetFeature(featureID)")
-                    args_subtree:add(f_feature_index, args:range(0, 1))
-                    local ft_type_subtree = args_subtree:add(f_feature_type, args:range(1, 1):bitfield(0, 2))
-                    ft_type_subtree:add(f_ft_obsolete, args:range(1, 1):bitfield(0, 1))
-                    ft_type_subtree:add(f_ft_sw_hidden, args:range(1, 1):bitfield(1, 1))
-                elseif ase == 1 then
-                    subtree:add(f_fctn, "ping = GetFeature(pingData)")
-                    args_subtree:add(f_major_version, args:range(0, 1))
-                    args_subtree:add(f_minor_version, args:range(1, 1))
-                    args_subtree:add(f_ping_data, args:range(2, 1))
+                    if to_host then -- returns
+                        args_subtree:add(f_feature_index, args:range(0, 1))
+                        local ft_type_subtree = args_subtree:add(f_feature_type, args:range(1, 1):bitfield(0, 2))
+                        ft_type_subtree:add(f_ft_obsolete, args:range(1, 1):bitfield(0, 1))
+                        ft_type_subtree:add(f_ft_state, args:range(1, 1):bitfield(1, 1))
+                    else -- parameters
+                        args_subtree:add(f_feature_id, args:range(0, 2))
+                    end
+                elseif ase == 1 then -- ASE 1: version, ping = GetFeature(pingData)
+                    subtree:add(f_fctn, "version, ping = GetFeature(pingData)")
+                    if to_host then --returns
+                        args_subtree:add(f_major_version, args:range(0, 1))
+                        args_subtree:add(f_minor_version, args:range(1, 1))
+                    end
+                    args_subtree:add(f_ping_data, args:range(2, 1)) -- used in both return and parameters
                 end
             --end
 
             -- IFeatureSet
             elseif feature == FT_I_FEATURE_SET then
-                if ase == 0 then
+                if ase == 0 then -- ASE 0: count = GetCount()
                     subtree:add(f_fctn, "count = GetCount()")
-                    args_subtree:add(f_count, args:range(0, 1))
-                elseif ase == 1 then
+                    if to_host then -- returns
+                        args_subtree:add(f_count, args:range(0, 1))
+                    end
+                elseif ase == 1 then -- ASE 1: featureID, featureType = GetFeatureID(featureIndex)
                     subtree:add(f_fctn, "featureID, featureType = GetFeatureID(featureIndex)")
-                    args_subtree:add(f_feature_id, args:range(0, 2))
-                    local ft_type_subtree = args_subtree:add(f_feature_type, args:range(2, 1):bitfield(0, 2))
-                    ft_type_subtree:add(f_ft_obsolete, args:range(2, 1):bitfield(0, 1))
-                    ft_type_subtree:add(f_ft_sw_hidden, args:range(2, 1):bitfield(1, 1))
+                    if to_host then -- returns
+                        args_subtree:add(f_feature_id, args:range(0, 2))
+                        local ft_type_subtree = args_subtree:add(f_feature_type, args:range(2, 1):bitfield(0, 2))
+                        ft_type_subtree:add(f_ft_obsolete, args:range(2, 1):bitfield(0, 1))
+                        ft_type_subtree:add(f_ft_state, args:range(2, 1):bitfield(1, 1))
+                    else -- parameters
+                        args_subtree:add(f_feature_index, args:range(0, 1))
+                    end
                 end
             end
 
