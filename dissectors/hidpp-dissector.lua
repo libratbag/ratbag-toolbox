@@ -7,9 +7,11 @@ local HID                       = 0x0003
 local REPORT_SHORT              = 0x10
 local REPORT_LONG               = 0x11
 local REPORT_VERY_LONG          = 0x12
+local REPORT_UNK1               = 0x20
 local REPORT_SHORT_LEN          = 7
 local REPORT_LONG_LEN           = 20
 local REPORT_VERY_LONG_LEN      = 64
+local REPORT_UNK1_LEN           = 15
 
 --  Errors
 
@@ -78,6 +80,7 @@ local f_report  = ProtoField.uint8  ("hidpp.report",    "Report Type",  base.HEX
     [REPORT_SHORT]      = "Short",
     [REPORT_LONG]       = "Long",
     [REPORT_VERY_LONG]  = "Very Long",
+    [REPORT_UNK1]       = "Unknown"
 })
 local device_arr = {
     [0x00]  = "Wired mouse",
@@ -186,7 +189,8 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
     -- remove extra info included in USB CONTROL packets
     if length == REPORT_SHORT_LEN + 7 or
         length == REPORT_LONG_LEN + 7 or
-        length == REPORT_VERY_LONG_LEN + 7 then
+        length == REPORT_VERY_LONG_LEN + 7 or
+        length == REPORT_UNK1_LEN + 7 then
             buffer = buffer(7)
             length = buffer:len()
     end
@@ -198,11 +202,13 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 --    end
 
     if length >= REPORT_SHORT_LEN then -- minimum length
+--        pinfo.cols.protocol = "CAUGHT"
         local report = buffer(0, 1):uint()
 
         if (report == REPORT_SHORT and length == REPORT_SHORT_LEN) or
            (report == REPORT_LONG  and length == REPORT_LONG_LEN) or
-           (report == REPORT_VERY_LONG  and length == REPORT_VERY_LONG_LEN) then
+           (report == REPORT_VERY_LONG  and length == REPORT_VERY_LONG_LEN) or
+           (report == REPORT_UNK1 and length == REPORT_UNK1_LEN) then
             pinfo.cols.protocol = "HID++"
 
             -- debug
