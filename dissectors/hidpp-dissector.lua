@@ -180,7 +180,26 @@ hidpp_proto.fields = {
     f_transportlayer,
 }
 
-local hidpp_version = {}
+local hidpp_version = 2 -- default
+local hidpp_version_packets = {}
+
+-- get args
+local args = { ... }
+if #args ~= 0 then
+    local arg = tonumber(args[1])
+    if arg ~= nil and arg >= 1 and arg <= 2 then
+        hidpp_version = arg
+    end
+end
+
+function setlast(num, version)
+    for i = num-1, 0, -1 do
+        if hidpp_version_packets[i] ~= nil then
+            hidpp_version_packets[i] = hidpp_version
+            return
+        end
+    end
+end
 
 -- Dissector
 function hidpp_proto.dissector(buffer, pinfo, tree)
@@ -209,7 +228,10 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
            (report == REPORT_LONG  and length == REPORT_LONG_LEN) or
            (report == REPORT_VERY_LONG  and length == REPORT_VERY_LONG_LEN) or
            (report == REPORT_UNK1 and length == REPORT_UNK1_LEN) then
-            pinfo.cols.protocol = "HID++"
+            if hidpp_version_packets[pinfo.number] == nil then
+                hidpp_version_packets[pinfo.number] = hidpp_version
+            end
+            pinfo.cols.protocol = "HID++ " .. hidpp_version_packets[pinfo.number] .. ".0"
 
             -- debug
 --            print("= Packet is HID++")
@@ -246,6 +268,11 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     subtree:add(f_fctn, "ERR_INVALID_SUBID (means it's HID++ 1.0)")
                     args_subtree:add(f_major_version, 1)
                     args_subtree:add(f_minor_version, 0)
+                    -- update version
+                    hidpp_version = 1
+                    hidpp_version_packets[pinfo.number] = hidpp_version
+                    setlast(pinfo.number, hidpp_version) -- set also previous packet, the request
+                    pinfo.cols.protocol = "HID++ " .. hidpp_version .. ".0"
                 else -- error
                     subtree:add(f_error, "A ERR_INVALID_SUBID packet shouldn't be sent from the host to the device")
                 end
@@ -265,6 +292,11 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     if to_host then --returns
                         args_subtree:add(f_major_version, args:range(0, 1))
                         args_subtree:add(f_minor_version, args:range(1, 1))
+                        -- update version
+                        hidpp_version = 2
+                        hidpp_version_packets[pinfo.number] = hidpp_version
+                        pinfo.cols.protocol = "HID++ " .. hidpp_version .. ".0"
+                        setlast(pinfo.number, hidpp_version) -- set also previous packet, the request
                     end
                     args_subtree:add(f_ping_data, args:range(2, 1)) -- used in both return and parameters
                 end
