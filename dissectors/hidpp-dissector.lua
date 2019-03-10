@@ -1,6 +1,3 @@
--- Protocol
-local hidpp_proto = Proto("hidpp", "Logitech HID++")
-
 -- Symbols
 local IF_CLASS_UNKNOWN          = 0xFFFF
 local HID                       = 0x0003
@@ -49,19 +46,31 @@ local FT_I_ROOT                     = 0x0000
 local FT_I_FEATURE_SET              = 0x0001
 local FT_I_FIRMWARE_INFO            = 0x0003
 local FT_GET_DEVICE_NAME_TYPE       = 0x0005
+local FT_RESET                      = 0x0020
 local FT_SET_REGISTER               = 0x0080
 local FT_GET_REGISTER               = 0x0081
 local FT_SET_LONG_REGISTER          = 0x0082
 local FT_GET_LONG_REGISTER          = 0x0083
 local FT_BATTERY_LEVEL_SATUS        = 0x1000
-local FT_SPECIAL_KEYS_MSE_BUTTONS   = 0x1B00
+local FT_LED_SW_CONTROL             = 0x1300
+local FT_KBD_REPROGRAMMABLE_KEYS    = 0x1B00
+local FT_SPECIAL_KEYS_BUTTONS       = 0x1B04
 local FT_WIRELESS_DEVICE_SATUS      = 0x1D4B
 local FT_HIRES_SCROLLING            = 0x2120
 local FT_HIRES_WHEEL                = 0x2121
+local FT_MOUSE_POINTER_BASIC        = 0x2200
+local FT_AJUSTABLE_DPI              = 0x2201
 local FT_SOLAR_KEYBOARD             = 0x4301
 local FT_TOUCHPAD_FW_ITEMS          = 0x6010
 local FT_TOUCHPAD_RAW_XY            = 0x6100
+local FT_AJUSTABLE_REPORT_RATE      = 0x8060
+local FT_COLOR_LED_EFFECTS          = 0x8070
+local FT_ONBOARD_PROFILES           = 0x8100
+local FT_MOUSE_BUTTON_SPY           = 0x8110
 local FT_FORCE_FEEDBACK             = 0x8123
+
+-- Protocol
+local hidpp_proto = Proto("hidpp", "Logitech HID++")
 
 -- Fields
 local f_raw     = ProtoField.bytes  ("hidpp.raw",       "Raw Data")
@@ -70,8 +79,11 @@ local f_report  = ProtoField.uint8  ("hidpp.report",    "Report Type",  base.HEX
     [REPORT_LONG]       = "Long",
     [REPORT_VERY_LONG]  = "Very Long",
 })
-local device_arr = {[0xFF]  = "Unconnected wireless adapter"}
-for i = 0, 0xFF - 1 do
+local device_arr = {
+    [0x00]  = "Wired mouse",
+    [0xFF]  = "Unconnected wireless adapter",
+}
+for i = 1, 0xFF - 1 do
     device_arr[i] = "Device " .. i
 end
 local f_device  = ProtoField.uint8  ("hidpp.device",    "Device",       base.HEX, device_arr)
@@ -80,18 +92,27 @@ local f_feature = ProtoField.uint8  ("hidpp.feature",   "Feature",      base.HEX
     [FT_I_FEATURE_SET]              = "IFeatureSet",
     [FT_I_FIRMWARE_INFO]            = "IFirmwareInfo",
     [FT_GET_DEVICE_NAME_TYPE]       = "GetDeviceNameType",
+    [FT_RESET]                      = "Reset",
     [FT_SET_REGISTER]               = "SetRegister",
     [FT_GET_REGISTER]               = "GetRegister",
     [FT_SET_LONG_REGISTER]          = "SetLongRegister",
     [FT_GET_LONG_REGISTER]          = "GetLongRegister",
     [FT_BATTERY_LEVEL_SATUS]        = "BatteryLevelStatus",
-    [FT_SPECIAL_KEYS_MSE_BUTTONS]   = "SpecialKeysMSEButtons",
+    [FT_LED_SW_CONTROL]             = "LedSoftwareControl",
+    [FT_KBD_REPROGRAMMABLE_KEYS]    = "KeyboardReprogrammableKeys",
+    [FT_SPECIAL_KEYS_BUTTONS]       = "SpecialKeysButtons",
     [FT_WIRELESS_DEVICE_SATUS]      = "WirelessDeviceStatus",
     [FT_HIRES_SCROLLING]            = "HiResScrolling",
     [FT_HIRES_WHEEL]                = "HiResWheel",
+    [FT_MOUSE_POINTER_BASIC]        = "MousePointerBasic",
+    [FT_AJUSTABLE_DPI]              = "AjustableDpi",
     [FT_SOLAR_KEYBOARD]             = "SolarKeyboard",
     [FT_TOUCHPAD_FW_ITEMS]          = "TouchpadFWItems",
     [FT_TOUCHPAD_RAW_XY]            = "TouchpadRawXY",
+    [FT_AJUSTABLE_REPORT_RATE]      = "AjustableReportRate",
+    [FT_COLOR_LED_EFFECTS]          = "ColorLedEffects",
+    [FT_ONBOARD_PROFILES]           = "OnboardProfiles",
+    [FT_MOUSE_BUTTON_SPY]           = "MouseButtonSpy",
     [FT_FORCE_FEEDBACK]             = "ForceFeedback",
 })
 local f_fctn    = ProtoField.string ("hidpp.fctn",      "Function")
@@ -156,19 +177,18 @@ hidpp_proto.fields = {
     f_transportlayer,
 }
 
-local version_major = {}
-local version_minor = {}
+local hidpp_version = {}
 
 -- Dissector
 function hidpp_proto.dissector(buffer, pinfo, tree)
-    local length = buffer:bytes():len()
+    local length = buffer:len()
 
     -- remove extra info included in USB CONTROL packets
     if length == REPORT_SHORT_LEN + 7 or
         length == REPORT_LONG_LEN + 7 or
         length == REPORT_VERY_LONG_LEN + 7 then
             buffer = buffer(7)
-            length = buffer:bytes():len()
+            length = buffer:len()
     end
 
     -- debug
