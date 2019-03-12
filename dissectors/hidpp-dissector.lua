@@ -147,8 +147,10 @@ local f_fw_type         = ProtoField.uint8  ("hidpp.args.fw_type",          "FW 
 })
 local f_fw_prefix       = ProtoField.string ("hidpp.args.fw_prefix",        "FW Prefix",    base.ASCII)
 local f_fw_version      = ProtoField.float  ("hidpp.args.fw_version",       "FW Version") -- BCD Encoded!
+local f_fw_build        = ProtoField.uint16 ("hidpp.args.fw_build",         "FW Build Number")
 local f_fw_dyn_conf     = ProtoField.uint8  ("hidpp.args.fw_fyn_conf",      "FW Dynamic Conf")
 local f_transportlayer  = ProtoField.bytes  ("hidpp.args.transport_layer",  "Transport Layer") -- Unknown length
+local f_hw_version      = ProtoField.uint8  ("hidpp.args.hw_version",       "HW Version")
 
 hidpp_proto.fields = {
     f_raw,
@@ -176,8 +178,10 @@ hidpp_proto.fields = {
     f_fw_type,
     f_fw_prefix,
     f_fw_version,
+    f_fw_build,
     f_fw_dyn_conf,
     f_transportlayer,
+    f_hw_version,
 }
 
 local hidpp_version = {}
@@ -287,6 +291,35 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     else -- parameters
                         args_subtree:add(f_feature_index, args:range(0, 1))
                     end
+                end
+            --end
+
+            -- IFirmwareInfo
+            elseif feature == FT_I_FIRMWARE_INFO then
+                if ase == 0 then --  ASE 0: entityCount = GetEntityCount()
+                    subtree:add(f_fctn, "entityCount = GetEntityCount()")
+                    if to_host then --returns
+                        args_subtree:add(f_entity_count, args:range(0, 1))
+                    end
+                elseif ase == 1 then -- ASE 1: entity, protocol, version, build, dynamic_FWconf, transportLayer_specific_info = GetFwInfo(entity)
+                    if to_host then -- returns
+                        args_subtree:add(f_fw_type, args:range(0, 1):bitfield(4, 4))
+                        if args:range(0, 1):bitfield(4, 4) == 0 or args:range(0, 1):bitfield(4, 4) == 1 then -- fw_type = Main Application, Bootloader
+                            subtree:add(f_fctn, "entity, protocol, version, build, dynamic_FWconf, transportLayer_specific_info = GetFwInfo(entity)")
+                            args_subtree:add(f_fw_prefix, args:range(1, 3))
+                            args_subtree:add(f_fw_version, args_subtree(4, 2)) -- TODO: Decode BCD
+                            args_subtree:add(f_fw_build, args:range(6, 2))
+                            args_subtree:add(f_fw_dyn_conf, args(8, 1))
+                            args_subtree:add(f_transportlayer, args(9))
+                        elseif args:range(0, 1):bitfield(4, 4) == 2 then -- fw_type = Hardware
+                            subtree:add(f_fctn, "hw_version = GetFwInfo(entity)")
+                            args_subtree:add(f_hw_version, args(1, 1))
+                        end -- TODO: other fw_type
+                    else -- parameters
+                        args_subtree:add(f_fw_hw_entity, args:range(0, 1))
+                    end
+                elseif ase == 2 then
+                    -- No documentation :/
                 end
             end
 
