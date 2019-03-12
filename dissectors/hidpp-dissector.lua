@@ -126,6 +126,8 @@ local f_arg     = ProtoField.bytes  ("hidpp.args.arg",  "Argument")
 local f_error   = ProtoField.string ("hidpp.error" ,    "Error")
 
 -- possible arguments
+local f_address         = ProtoField.uint8  ("hidpp.args.address",          "Address")
+local f_value           = ProtoField.bytes  ("hidpp.args.value",            "Value")
 local f_major_version   = ProtoField.uint8  ("hidpp.args.major_version",    "Control Version Major")
 local f_minor_version   = ProtoField.uint8  ("hidpp.args.minor_version",    "Control Version Minor")
 local f_ping_data       = ProtoField.uint8  ("hidpp.args.ping_data",        "Ping Data",    base.HEX)
@@ -164,6 +166,8 @@ hidpp_proto.fields = {
     f_arg,
     f_error,
     -- possible arguments
+    f_address,
+    f_value,
     f_major_version,
     f_minor_version,
     f_ping_data,
@@ -243,11 +247,12 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             local to_host = tostring(pinfo.dst) == "host"
 
             -- Populate data
-            local device    = buffer(1, 1):uint()
-            local feature   = buffer(2, 1):uint()
-            local ase       = buffer(3, 1):bitfield(0, 4)
-            local sw_id     = buffer(3, 1):bitfield(4, 4)
-            local args      = buffer(4)
+            local device        = buffer(1, 1):uint()
+            local feature       = buffer(2, 1):uint()
+            local ase           = buffer(3, 1):bitfield(0, 4)
+            local sw_id         = buffer(3, 1):bitfield(4, 4)
+            local args          = buffer(4)
+            local hidpp1_args   = buffer(3)
 
             local subtree = tree:add(hidpp_proto, buffer(), "HID++ Data")
             subtree:add(f_raw, buffer()) -- add raw byte for easier column visualization
@@ -262,7 +267,12 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             subtree:add(f_sw_id, sw_id)
 
             -- populate args
-            local args_subtree = subtree:add(f_args, args())
+            local args_subtree
+            if hidpp_version_packets[pinfo.number] == 1 then
+                args_subtree = subtree:add(f_args, args())
+            else
+                args_subtree = subtree:add(f_args, hidpp1_args())
+            end
 
             -- Start feature (function) check
 
@@ -352,6 +362,46 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     end
                 elseif ase == 2 then
                     -- No documentation :/
+                end
+            --end
+
+            elseif feature == FT_SET_REGISTER then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "SetRegister(address, value)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    if not to_host then -- params
+                        args_subtree:add(f_value, hidpp1_args(1, 3))
+                    end
+                end
+            --end
+
+            elseif feature == FT_GET_REGISTER then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "value = GetRegister(address)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    if to_host then -- returns
+                        args_subtree:add(f_value, hidpp1_args(1))
+                    end
+                end
+            --end
+
+            elseif feature == FT_SET_LONG_REGISTER then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "SetLongRegister(address, value)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    if not to_host then -- params
+                        args_subtree:add(f_value, hidpp1_args(1, 16))
+                    end
+                end
+            --end
+
+            elseif feature == FT_GET_LONG_REGISTER then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "value = GetLongRegister(address)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    if to_host then -- returns
+                        args_subtree:add(f_value, hidpp1_args(1))
+                    end
                 end
             end
 
