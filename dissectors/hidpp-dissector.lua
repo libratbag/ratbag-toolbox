@@ -330,8 +330,10 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             -- populate other fields
             subtree:add(f_device, device)
             subtree:add(f_feature, feature)
-            subtree:add(f_ase, ase)
-            subtree:add(f_sw_id, sw_id)
+            if hidpp_version_packets[pinfo.number] == 2 then
+                subtree:add(f_ase, ase)
+                subtree:add(f_sw_id, sw_id)
+            end
 
             -- populate args
             local args_subtree
