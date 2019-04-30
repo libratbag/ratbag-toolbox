@@ -520,6 +520,13 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
 end -- hidpp_proto.dissector
 
+
+-- Init routine
+function hidpp_proto.init()
+    -- Clear hidpp version when we start dissecting a new file
+    hidpp_version_packets = {}
+end
+
 -- Subscribe the dissector
 -- hid++ 2.0
 DissectorTable.get("usb.interrupt"):add(IF_CLASS_UNKNOWN, hidpp_proto)
