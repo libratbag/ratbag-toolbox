@@ -1,0 +1,61 @@
+ratbag-toolbox_references:
+  default_settings: &default_settings
+    working_directory: ~/ratbag-toolbox
+    environment:
+      LANG: C.UTF-8
+  test_dissectors: &test_dissectors
+    run:
+      name: Testing Dissectors
+      command: test/dissectors.sh
+
+arch_prep_cache: &arch_prep_cache
+  <<: *default_settings
+  steps:
+    - run:
+        name: Initializing Archlinux Cache
+        command: |
+            sudo pacman -Sy --noconfirm archlinux-keyring
+            sudo pacman -Su --noconfirm wireshark-cli
+    - persist_to_workspace:
+        root: /var/cache
+        paths:
+          - pacman/*
+
+arch_fetch_cache: &arch_fetch_cache
+  attach_workspace:
+        at: /var/cache/
+
+arch_settings: &arch_settings
+  <<: *default_settings
+  steps:
+#    - *arch_fetch_cache
+    - run:
+        name: Installing Prerequisites
+        command: pacman -Syu --noconfirm wireshark-cli git tar
+#        command: |
+#            sudo pacman -Sy --noconfirm archlinux-keyring
+#            sudo pacman -Su --noconfirm wireshark-cli
+    - checkout
+    - *test_dissectors
+
+version: 2
+jobs:
+#  arch_cache:
+#    <<: *arch_prep_cache
+#    docker:
+#      - image: flamusdiu/archlinux-devel
+  arch:
+    <<: *arch_settings
+    docker:
+      - image: archlinux/base
+#      - image: flamusdiu/archlinux-devel
+
+workflows:
+  version: 2
+  test_dissectors:
+    jobs:
+      - arch
+#      - arch_cache
+#      - arch:
+#          requires:
+#            - arch_cache
