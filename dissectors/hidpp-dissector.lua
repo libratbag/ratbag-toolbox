@@ -451,7 +451,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     subtree:add(f_fctn, "value = GetRegister(address)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if to_host then -- returns
-                        args_subtree:add(f_value, hidpp1_args(1))
+                        args_subtree:add(f_value, hidpp1_args(1, 1))
                     end
                 end
             --end
@@ -473,7 +473,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     subtree:add(f_fctn, "value = GetLongRegister(address)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if to_host then -- returns
-                        args_subtree:add(f_value, hidpp1_args(1))
+                        args_subtree:add(f_value, hidpp1_args(1, 1))
                     end
                 end
             --end
