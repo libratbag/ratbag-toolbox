@@ -434,6 +434,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                 end
             --end
 
+            -- SetRegister
             elseif feature == FT_SET_REGISTER then
                 if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "SetRegister(address, value)")
@@ -444,6 +445,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                 end
             --end
 
+            -- GetRegister
             elseif feature == FT_GET_REGISTER then
                 if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "value = GetRegister(address)")
@@ -454,6 +456,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                 end
             --end
 
+            -- SetLongRegister
             elseif feature == FT_SET_LONG_REGISTER then
                 if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "SetLongRegister(address, value)")
@@ -464,6 +467,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                 end
             --end
 
+            -- GetLongRegister
             elseif feature == FT_GET_LONG_REGISTER then
                 if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "value = GetLongRegister(address)")
