@@ -49,6 +49,9 @@ local FT_I_FEATURE_SET              = 0x0001
 local FT_I_FIRMWARE_INFO            = 0x0003
 local FT_GET_DEVICE_NAME_TYPE       = 0x0005
 local FT_RESET                      = 0x0020
+local FT_DEVICE_DISCONNECTION       = 0x0040
+local FT_DEVICE_CONNECTION          = 0x0041
+local FT_UNIFYING_LOCK_CHANGE_INFO  = 0x004A
 local FT_SET_REGISTER               = 0x0080
 local FT_GET_REGISTER               = 0x0081
 local FT_SET_LONG_REGISTER          = 0x0082
@@ -70,6 +73,11 @@ local FT_COLOR_LED_EFFECTS          = 0x8070
 local FT_ONBOARD_PROFILES           = 0x8100
 local FT_MOUSE_BUTTON_SPY           = 0x8110
 local FT_FORCE_FEEDBACK             = 0x8123
+
+local REG_UNIFYING_NOTIFICATIONS    = 0x00
+local REG_UNIFYING_CONNECTION_STATE = 0x02
+local REG_UNIFYING_DEV_CONNECTION   = 0xB2
+local REG_UNIFYING_DEV_ACTIVITY     = 0xB3
 
 -- Protocol
 local hidpp_proto = Proto("hidpp", "Logitech HID++")
@@ -96,6 +104,9 @@ local f_feature = ProtoField.uint8  ("hidpp.feature",   "Feature",      base.HEX
     [FT_I_FIRMWARE_INFO]            = "IFirmwareInfo",
     [FT_GET_DEVICE_NAME_TYPE]       = "GetDeviceNameType",
     [FT_RESET]                      = "Reset",
+    [FT_DEVICE_DISCONNECTION]       = "Device Disconnection",
+    [FT_DEVICE_CONNECTION]          = "Device Connection",
+    [FT_UNIFYING_LOCK_CHANGE_INFO]  = "Unifying Receiver Locking Change Information",
     [FT_SET_REGISTER]               = "SetRegister",
     [FT_GET_REGISTER]               = "GetRegister",
     [FT_SET_LONG_REGISTER]          = "SetLongRegister",
@@ -153,6 +164,49 @@ local f_fw_build        = ProtoField.uint16 ("hidpp.args.fw_build",         "FW 
 local f_fw_dyn_conf     = ProtoField.uint8  ("hidpp.args.fw_fyn_conf",      "FW Dynamic Conf")
 local f_transportlayer  = ProtoField.bytes  ("hidpp.args.transport_layer",  "Transport Layer") -- Unknown length
 local f_hw_version      = ProtoField.uint8  ("hidpp.args.hw_version",       "HW Version")
+local f_discon_type     = ProtoField.uint8  ("hidpp.args.discon_type",      "Disconnection Type",   base.HEX, {
+    [0x02] = "Device disconnected",
+})
+local f_protocol_type   = ProtoField.uint8  ("hidpp.args.protocol_type",    "Protocol Type",    base.HEX, {
+    [0x04] = "Unifying",
+})
+local f_device_info     = ProtoField.uint8  ("hidpp.args.device_info",      "Device Info")
+local f_wireless_pid_lsb    = ProtoField.uint8  ("hidpp.args.wireless_pid_lsb", "Wireless PID (LSB)")
+local f_wireless_pid_msb    = ProtoField.uint8  ("hidpp.args.wireless_pid_msb", "Wireless PID (MSB)")
+local f_locking_state   = ProtoField.uint8  ("hidpp.args.locking_state",    "Locking State",    base.DEC, {
+    [0] = "Locking closed",
+    [1] = "Locking open",
+})
+local f_error_type      = ProtoField.uint8  ("hidpp.args.error_type",       "Error Type",   base.DEC, {
+    [0x00] = "No error",
+    [0x01] = "Timeout",
+    [0x02] = "Unsupported device",
+    [0x03] = "Too many devices",
+    [0x06] = "Connection sequence timeout",
+})
+
+-- device info args
+local f_device_type     = ProtoField.uint8  ("hidpp.args.device_info.device_type",  "Device Type",  base.HEX, {
+    [0x01] = "Keyboard",
+    [0x02] = "Mouse",
+    [0x03] = "Numpad",
+    [0x04] = "Presenter",
+    [0x08] = "Trackball",
+    [0x09] = "Touchpad",
+})
+local f_sw_present      = ProtoField.bool   ("hidpp.args.device_info.sw_present",   "Software Present Flag")
+local f_encryption      = ProtoField.uint8  ("hidpp.args.device_info.encryption",   "Encryption Status",    base.DEC, {
+    [0] = "Link not encrypted",
+    [1] = "Link encrypted",
+})
+local f_link_status     = ProtoField.uint8  ("hidpp.args.device_info.link_status",  "Link Status",  base.DEC, {
+    [0] = "Link not established (out of range)",
+    [1] = "Link established (in range)",
+})
+local f_connection_reason   = ProtoField.uint8  ("hidpp.args.device_info.connection_reason",    "Connection Reason",    base.DEC, {
+    [0] = "Packet without payload",
+    [1] = "Packet with payload",
+})
 
 hidpp_proto.fields = {
     f_raw,
@@ -186,6 +240,19 @@ hidpp_proto.fields = {
     f_fw_dyn_conf,
     f_transportlayer,
     f_hw_version,
+    f_discon_type,
+    f_protocol_type,
+    f_device_info,
+    f_wireless_pid_lsb,
+    f_wireless_pid_msb,
+    f_locking_state,
+    f_error_type,
+    -- device info args
+    f_device_type,
+    f_sw_present,
+    f_encryption,
+    f_link_status,
+    f_connection_reason,
 }
 
 local hidpp_version = 2 -- default
@@ -403,10 +470,45 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                         args_subtree:add(f_value, hidpp1_args(1))
                     end
                 end
+            --end
+
+            -- Device Disconnection Event
+            elseif feature == FT_DEVICE_DISCONNECTION then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "(notification)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    args_subtree:add(f_discon_type, hidpp1_args(1, 1))
+                end
+            --end
+
+                -- Device Connection Event
+            elseif feature == FT_DEVICE_DISCONNECTION then
+                if hidpp_version_packets[pinfo.number] == 1 then
+                    subtree:add(f_fctn, "(notification)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    args_subtree:add(f_protocol_type, hidpp1_args:range(0, 1):bitfield(0, 3))
+                    local device_info = args_subtree:add(f_device_info, hidpp1_args(1))
+                    device_info:add(f_device_type, hidpp1_args:range(1, 1):bitfield(0, 4))
+                    device_info:add(f_sw_present, hidpp1_args:range(1, 1):bitfield(4, 1))
+                    device_info:add(f_encryption, hidpp1_args:range(1, 1):bitfield(5, 1))
+                    device_info:add(f_link_status, hidpp1_args:range(1, 1):bitfield(6, 1))
+                    device_info:add(f_connection_reason, hidpp1_args:range(1, 1):bitfield(7, 1))
+                    args_subtree:add(f_wireless_pid_lsb, hidpp1_args(2, 1))
+                    args_subtree:add(f_wireless_pid_msb, hidpp1_args(3, 1))
+                end
+            --end
+
+            -- Unifying Receiver Locking Change Information Event
+            elseif feature == FT_UNIFYING_LOCK_CHANGE_INFO then
+                if hidpp_version_packets[pinfo.number] == 1 then -- HID++ 1.0
+                    subtree:add(f_fctn, "(notification)")
+                    args_subtree:add(f_address, hidpp1_args(0, 1))
+                    args_subtree:add(f_locking_state, hidpp1_args:range(1, 1):bitfield(0, 1))
+                    args_subtree:add(f_error_type, hidpp1_args(2, 1))
+                end
             end
 
-            -- TODO
-
+        -- TODO
         end -- report check
     end -- length check
 
