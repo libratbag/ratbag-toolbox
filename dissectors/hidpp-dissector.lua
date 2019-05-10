@@ -368,25 +368,13 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             length = buffer:len()
     end
 
-    -- debug
---    if length > 0 then
---        print("\n======= PACKET", pinfo.number)
---        print(buffer:bytes())
---    end
-
     if length >= REPORT_SHORT_LEN then -- minimum length
---        pinfo.cols.protocol = "CAUGHT"
         local report = buffer(0, 1):uint()
 
         if (report == REPORT_SHORT and length == REPORT_SHORT_LEN) or
            (report == REPORT_LONG  and length == REPORT_LONG_LEN) or
            (report == REPORT_VERY_LONG  and length == REPORT_VERY_LONG_LEN) or
            (report == REPORT_UNK1 and length == REPORT_UNK1_LEN) then
-
-            -- debug
---            print("= Packet is HID++")
---            print(pinfo.src, " > ", pinfo.dst)
-            print("\n=== Packet #", pinfo.number)
 
             local to_host = tostring(pinfo.dst) == "host"
 
