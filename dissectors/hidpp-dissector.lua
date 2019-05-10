@@ -245,8 +245,7 @@ local f_protocol_type   = ProtoField.uint8  ("hidpp.args.protocol_type",    "Pro
     [0x04] = "Unifying",
 })
 local f_device_info     = ProtoField.uint8  ("hidpp.args.device_info",      "Device Info")
-local f_wireless_pid_lsb    = ProtoField.uint8  ("hidpp.args.wireless_pid_lsb", "Wireless PID (LSB)")
-local f_wireless_pid_msb    = ProtoField.uint8  ("hidpp.args.wireless_pid_msb", "Wireless PID (MSB)")
+local f_wireless_pid    = ProtoField.uint8  ("hidpp.args.wireless_pid",     "Wireless PID",     base.HEX)
 local f_locking_state   = ProtoField.uint8  ("hidpp.args.locking_state",    "Locking State",    base.DEC, {
     [0] = "Locking closed",
     [1] = "Locking open",
@@ -317,8 +316,7 @@ hidpp_proto.fields = {
     f_discon_type,
     f_protocol_type,
     f_device_info,
-    f_wireless_pid_lsb,
-    f_wireless_pid_msb,
+    f_wireless_pid,
     f_locking_state,
     f_error_type,
     -- device info args
@@ -590,7 +588,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             --end
 
                 -- Device Connection Event
-            elseif feature == FT_DEVICE_DISCONNECTION then
+            elseif feature == FT_DEVICE_CONNECTION then
                 if hidpp_version_packets[dev][idx][pinfo.number] == 1 then
                     subtree:add(f_fctn, "(notification)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
@@ -601,8 +599,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     device_info:add(f_encryption, hidpp1_args:range(1, 1):bitfield(5, 1))
                     device_info:add(f_link_status, hidpp1_args:range(1, 1):bitfield(6, 1))
                     device_info:add(f_connection_reason, hidpp1_args:range(1, 1):bitfield(7, 1))
-                    args_subtree:add(f_wireless_pid_lsb, hidpp1_args(2, 1))
-                    args_subtree:add(f_wireless_pid_msb, hidpp1_args(3, 1))
+                    args_subtree:add_le(f_wireless_pid, hidpp1_args(2, 2))
                 end
             --end
 
