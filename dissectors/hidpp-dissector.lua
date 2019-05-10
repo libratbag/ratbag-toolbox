@@ -342,13 +342,17 @@ if #args ~= 0 then
     end
 end
 
-function setlast(num, version, dev)
+function setlast(num, version, dev, idx)
     for i = num-1, 0, -1 do
-        if hidpp_version_packets[dev][i] ~= nil then
-            hidpp_version_packets[dev][i] = hidpp_version[dev]
+        if hidpp_version_packets[dev][idx][i] ~= nil then
+            hidpp_version_packets[dev][idx][i] = hidpp_version[dev][idx]
             return
         end
     end
+end
+
+function pv(name, var)
+    print(name .. " = ", var, " | type(" .. name .. ") = ", type(var))
 end
 
 -- Dissector
@@ -393,9 +397,17 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             end
             dev = string.match(tostring(dev), "%d.%d")
 
+            -- Get HID++ device index
+            local idx = buffer(1, 1):uint()
+
             -- Initalize current protocol version for device
             if hidpp_version[dev] == nil then
-                hidpp_version[dev] = initial_hidpp_version
+                hidpp_version[dev] = {}
+            end
+
+            -- Initalize current protocol version for HID++ device
+            if hidpp_version[dev][idx] == nil then
+                hidpp_version[dev][idx] = initial_hidpp_version
             end
 
             -- Initialize protocol version array for device
@@ -403,15 +415,20 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                 hidpp_version_packets[dev] = {}
             end
 
-            -- Populate intial protocol version
-            if hidpp_version_packets[dev][pinfo.number] == nil or type(hidpp_version_packets[dev][pinfo.number]) == "table" then -- something weird is happening here, if variable is a table then it is uninitialized
-                hidpp_version_packets[dev][pinfo.number] = hidpp_version[dev]
+            -- Initializer protocol version array for HID++ device
+            if hidpp_version_packets[dev][idx] == nil then
+                hidpp_version_packets[dev][idx] = {}
             end
 
-            pinfo.cols.protocol = "HID++ " .. hidpp_version_packets[dev][pinfo.number] .. ".0"
+            -- Populate intial protocol version
+            if hidpp_version_packets[dev][idx][pinfo.number] == nil or type(hidpp_version_packets[dev][idx][pinfo.number]) == "table" then -- something weird is happening here, if variable is a table then it is uninitialized
+                hidpp_version_packets[dev][idx][pinfo.number] = hidpp_version[dev][idx]
+            end
+
+            pinfo.cols.protocol = "HID++ " .. hidpp_version_packets[dev][idx][pinfo.number] .. ".0"
 
             -- Populate data
-            local device        = buffer(1, 1):uint()
+            local device        = idx
             local feature       = buffer(2, 1):uint()
             local ase           = buffer(3, 1):bitfield(0, 4)
             local sw_id         = buffer(3, 1):bitfield(4, 4)
@@ -427,14 +444,14 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
             -- populate other fields
             subtree:add(f_device, device)
             subtree:add(f_feature, feature)
-            if hidpp_version_packets[dev][pinfo.number] == 2 then
+            if hidpp_version_packets[dev][idx][pinfo.number] == 2 then
                 subtree:add(f_ase, ase)
                 subtree:add(f_sw_id, sw_id)
             end
 
             -- populate args
             local args_subtree
-            if hidpp_version_packets[dev][pinfo.number] == 1 then
+            if hidpp_version_packets[dev][idx][pinfo.number] == 1 then
                 args_subtree = subtree:add(f_args, args())
             else
                 args_subtree = subtree:add(f_args, hidpp1_args())
@@ -449,10 +466,10 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                     args_subtree:add(f_major_version, 1)
                     args_subtree:add(f_minor_version, 0)
                     -- update version
-                    hidpp_version[dev] = 1
-                    hidpp_version_packets[dev][pinfo.number] = hidpp_version
-                    setlast(pinfo.number, hidpp_version, dev) -- set also previous packet, the request
-                    pinfo.cols.protocol = "HID++ " .. hidpp_version[dev] .. ".0"
+                    hidpp_version[dev][idx] = 1
+                    hidpp_version_packets[dev][idx][pinfo.number] = hidpp_version
+                    setlast(pinfo.number, hidpp_version, dev, idx) -- set also previous packet, the request
+                    pinfo.cols.protocol = "HID++ " .. hidpp_version[dev][idx] .. ".0"
                 else -- error
                     subtree:add(f_error, "A ERR_INVALID_SUBID packet shouldn't be sent from the host to the device")
                 end
@@ -473,10 +490,10 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
                         args_subtree:add(f_major_version, args:range(0, 1))
                         args_subtree:add(f_minor_version, args:range(1, 1))
                         -- update version
-                        hidpp_version[dev] = 2
-                        hidpp_version_packets[dev][pinfo.number] = hidpp_version
-                        pinfo.cols.protocol = "HID++ " .. hidpp_version[dev] .. ".0"
-                        setlast(pinfo.number, hidpp_version, dev) -- set also previous packet, the request
+                        hidpp_version[dev][idx] = 2
+                        hidpp_version_packets[dev][idx][pinfo.number] = hidpp_version
+                        pinfo.cols.protocol = "HID++ " .. hidpp_version[dev][idx] .. ".0"
+                        setlast(pinfo.number, hidpp_version, dev, idx) -- set also previous packet, the request
                     end
                     args_subtree:add(f_ping_data, args:range(2, 1)) -- used in both return and parameters
                 end
@@ -533,7 +550,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- SetRegister
             elseif feature == FT_SET_REGISTER then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "SetRegister(address, value)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if not to_host then -- params
@@ -544,7 +561,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- GetRegister
             elseif feature == FT_GET_REGISTER then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "value = GetRegister(address)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if to_host then -- returns
@@ -555,7 +572,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- SetLongRegister
             elseif feature == FT_SET_LONG_REGISTER then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "SetLongRegister(address, value)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if not to_host then -- params
@@ -566,7 +583,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- GetLongRegister
             elseif feature == FT_GET_LONG_REGISTER then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "value = GetLongRegister(address)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     if to_host then -- returns
@@ -577,7 +594,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- Device Disconnection Event
             elseif feature == FT_DEVICE_DISCONNECTION then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "(notification)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     args_subtree:add(f_discon_type, hidpp1_args(1, 1))
@@ -586,7 +603,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
                 -- Device Connection Event
             elseif feature == FT_DEVICE_DISCONNECTION then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then
                     subtree:add(f_fctn, "(notification)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     args_subtree:add(f_protocol_type, hidpp1_args:range(0, 1):bitfield(0, 3))
@@ -603,7 +620,7 @@ function hidpp_proto.dissector(buffer, pinfo, tree)
 
             -- Unifying Receiver Locking Change Information Event
             elseif feature == FT_UNIFYING_LOCK_CHANGE_INFO then
-                if hidpp_version_packets[dev][pinfo.number] == 1 then -- HID++ 1.0
+                if hidpp_version_packets[dev][idx][pinfo.number] == 1 then -- HID++ 1.0
                     subtree:add(f_fctn, "(notification)")
                     args_subtree:add(f_address, hidpp1_args(0, 1))
                     args_subtree:add(f_locking_state, hidpp1_args:range(1, 1):bitfield(0, 1))
@@ -621,6 +638,7 @@ end -- hidpp_proto.dissector
 -- Init routine
 function hidpp_proto.init()
     -- Clear hidpp version when we start dissecting a new file
+    hidpp_version = {}
     hidpp_version_packets = {}
 end
 
